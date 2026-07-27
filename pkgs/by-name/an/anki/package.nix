@@ -182,6 +182,7 @@ python3Packages.buildPythonApplication (finalAttrs: {
     writableTmpDirAsHomeHook
     yarn-berry_4.yarnBerryConfigHook
     imagemagick
+    python3Packages.pytestCheckHook
   ]
   ++ lib.optional stdenv.hostPlatform.isDarwin swift
   # Needed for when Qt uses a system's GTK file picker.
@@ -277,34 +278,31 @@ python3Packages.buildPythonApplication (finalAttrs: {
   '';
 
   # mimic https://github.com/ankitects/anki/blob/76d8807315fcc2675e7fa44d9ddf3d4608efc487/build/ninja_gen/src/python.rs#L232-L250
-  # TODO: switch to pytestCheckHook. see also https://github.com/attoknot/nixpkgs/tree/anki-pytestCheckHook
-  checkPhase =
-    let
-      disabledTestsString =
-        lib.pipe
-          [
-            # assumes / is not writeable, somehow fails on nix-portable brwap
-            "test_create_open"
-          ]
-          [
-            (lib.map (test: "not ${test}"))
-            (lib.concatStringsSep " and ")
-            lib.escapeShellArg
-          ];
-      # qt/tests/test_installer.py is for the installer.
-      # those tests use the package `briefcase` which isn't on nixpkgs yet
-      # and isn't included in this derivation, so they fail
 
-    in
-    ''
-      runHook preCheck
-      export PYTHONPATH=$PYTHONPATH:$PWD/out/pyenv/${python3.sitePackages}
-      ANKI_TEST_MODE=1 PYTHONPATH=$PYTHONPATH:$PWD/out/pylib \
-        pytest -p no:cacheprovider pylib/tests -k ${disabledTestsString}
-      ANKI_TEST_MODE=1 PYTHONPATH=$PYTHONPATH:$PWD/out/pylib:$PWD/pylib:$PWD/out/qt \
-        pytest -p no:cacheprovider qt/tests -k ${disabledTestsString} --ignore qt/tests/test_installer.py
-      runHook postCheck
-    '';
+  preCheck = ''
+    export PYTHONPATH="$PYTHONPATH:$PWD/out/pyenv/${python3.sitePackages}"
+    export PYTHONPATH="$PYTHONPATH:$PWD/out/pylib:$PWD/pylib:$PWD/out/qt"
+    export ANKI_TEST_MODE=1
+  '';
+  postCheck = ''
+    unset ANKI_TEST_MODE
+  '';
+  pytestFlags = [ "-p" "no:cacheprovider" ];
+
+  enabledTestPaths = [
+    "pylib/"
+    "qt/"
+  ];
+  disabledTests = [
+    # assumes / is not writeable, somehow fails on nix-portable brwap
+    "test_create_open"
+  ];
+  disabledTestPaths = [
+    # qt/tests/test_installer.py is for the installer.
+    # those tests use the package `briefcase` which isn't on nixpkgs yet
+    # and isn't included in this derivation, so they fail
+    "qt/tests/test_installer.py"
+  ];
 
   installPhase = ''
     runHook preInstall
